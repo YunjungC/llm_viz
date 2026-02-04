@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM 거대 모델 성능 추이 (≥100B)</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 40px 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            padding: 40px;
+        }
+        
+        header {
+            margin-bottom: 40px;
+        }
+        
+        h1 {
+            font-size: 36px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+        }
+        
+        .subtitle {
+            font-size: 16px;
+            color: #666;
+            font-weight: 400;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-left: 12px;
+            letter-spacing: 0.5px;
+        }
+        
+        .info-box {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .info-box p {
+            font-size: 14px;
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 8px;
+        }
+        
+        .info-box p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.8);
+        }
+        
+        #chart {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        .tooltip {
+            position: absolute;
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.92);
+            color: white;
+            border-radius: 8px;
+            pointer-events: none;
+            font-size: 13px;
+            line-height: 1.6;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 1000;
+            max-width: 280px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .tooltip strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .tooltip-lab {
+            color: #90caf9;
+            font-weight: 500;
+        }
+        
+        .axis-label {
+            font-size: 14px;
+            font-weight: 600;
+            fill: #333;
+            letter-spacing: 0.5px;
+        }
+        
+        .grid line {
+            stroke: #e0e0e0;
+            stroke-opacity: 0.5;
+            stroke-dasharray: 2,2;
+        }
+        
+        .grid path {
+            stroke-width: 0;
+        }
+        
+        .reference-line {
+            stroke: #9e9e9e;
+            stroke-width: 1.5;
+            stroke-dasharray: 5,5;
+            opacity: 0.4;
+        }
+        
+        .reference-label {
+            font-size: 11px;
+            fill: #666;
+            font-weight: 500;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .bubble {
+            cursor: pointer;
+            transition: all 0.3s ease;
+            stroke-width: 2;
+            stroke: rgba(255,255,255,0.9);
+        }
+        
+        .bubble:hover {
+            stroke-width: 3;
+            stroke: rgba(0,0,0,0.3);
+            filter: brightness(1.1);
+        }
+        
+        .model-label {
+            font-size: 10px;
+            font-weight: 500;
+            fill: #333;
+            pointer-events: none;
+            font-family: 'IBM Plex Sans', sans-serif;
+            text-shadow: 0 0 3px white, 0 0 3px white, 0 0 3px white;
+        }
+        
+        .axis text {
+            font-size: 12px;
+            fill: #666;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .axis path,
+        .axis line {
+            stroke: #bbb;
+            stroke-width: 1;
+        }
+        
+        @media (max-width: 1024px) {
+            .container {
+                padding: 24px;
+            }
+            
+            h1 {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                LLM 거대 모델 성능 추이 
+                <span class="badge">≥100B 파라미터</span>
+            </h1>
+            <p class="subtitle">2022-2026년 출시된 대규모 언어모델의 MMLU 벤치마크 성능</p>
+        </header>
+        
+        <div class="info-box">
+            <p><strong>총 48개 거대 모델</strong> - 100B 이상의 파라미터를 가진 모델들</p>
+            <p><strong>원의 크기</strong> = 모델 파라미터 수 (100B ~ 3000B)</p>
+            <p><strong>기준선</strong> (점선) = 89.8점 (인간 전문가 수준)</p>
+        </div>
+        
+        <div class="legend" id="legend"></div>
+        
+        <div id="chart"></div>
+        <div class="tooltip" id="tooltip"></div>
+    </div>
+
+    <script>
+        const labColors = {
+            'Anthropic': '#cc785c',
+            'Google DeepMind': '#fbbc04',
+            'Google': '#fbbc04',
+            'Meta AI': '#0668e1',
+            'Mistral': '#2dd4bf',
+            'OpenAI': '#10a37f',
+            'xAI': '#e91e63',
+            'DeepSeek-AI': '#ff6b35',
+            'Microsoft': '#00a4ef',
+            'NVIDIA': '#76b900',
+            'Alibaba': '#ff6a00',
+            'Tencent': '#4169e1',
+            'LG': '#a50034',
+            'SKT': '#ea002c',
+            'Upstage AI': '#7c3aed',
+            'Baidu': '#2932e1',
+            'IBM': '#054ada',
+            'Allen AI': '#9333ea'
+        };
+
+        function formatDate(decimal) {
+            const year = Math.floor(decimal);
+            const month = Math.round((decimal - year) * 12) + 1;
+            const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+            return `${year}년 ${monthNames[month - 1]}`;
+        }
+
+        const vizData = [
+        {
+                "model": "SOLAR Open",
+                "lab": "Upstage AI",
+                "date": 2025.9166666666667,
+                "mmlu": 88.2,
+                "parameters": 102.0
+        },
+        {
+                "model": "GPT-5.2",
+                "lab": "OpenAI",
+                "date": 2025.9166666666667,
+                "mmlu": 91.3,
+                "parameters": 3000.0
+        },
+        {
+                "model": "GPT-5.1",
+                "lab": "OpenAI",
+                "date": 2025.8333333333333,
+                "mmlu": 91.0,
+                "parameters": 2000.0
+        },
+        {
+                "model": "DeepSeek-V3.1-Base",
+                "lab": "DeepSeek-AI",
+                "date": 2025.5833333333333,
+                "mmlu": 93.7,
+                "parameters": 685.0
+        },
+        {
+                "model": "GPT-5",
+                "lab": "OpenAI",
+                "date": 2025.5833333333333,
+                "mmlu": 91.0,
+                "parameters": 1700.0
+        },
+        {
+                "model": "gpt-oss-120b",
+                "lab": "OpenAI",
+                "date": 2025.5833333333333,
+                "mmlu": 90.0,
+                "parameters": 120.0
+        },
+        {
+                "model": "Qwen3-235B-A22B-Thinking-2507",
+                "lab": "Alibaba",
+                "date": 2025.5,
+                "mmlu": 93.8,
+                "parameters": 235.0
+        },
+        {
+                "model": "Qwen3-235B-A22B-Instruct-2507",
+                "lab": "Alibaba",
+                "date": 2025.5,
+                "mmlu": 93.1,
+                "parameters": 235.0
+        },
+        {
+                "model": "DeepSeek-R1-0528",
+                "lab": "DeepSeek-AI",
+                "date": 2025.3333333333333,
+                "mmlu": 93.4,
+                "parameters": 685.0
+        },
+        {
+                "model": "Qwen3-235B-A22B",
+                "lab": "Alibaba",
+                "date": 2025.25,
+                "mmlu": 87.81,
+                "parameters": 235.0
+        },
+        {
+                "model": "MAI-DS-R1",
+                "lab": "Microsoft",
+                "date": 2025.25,
+                "mmlu": 86.8,
+                "parameters": 685.0
+        },
+        {
+                "model": "o4-mini",
+                "lab": "OpenAI",
+                "date": 2025.25,
+                "mmlu": 88.0,
+                "parameters": 200.0
+        },
+        {
+                "model": "o3",
+                "lab": "OpenAI",
+                "date": 2025.25,
+                "mmlu": 91.2,
+                "parameters": 600.0
+        },
+        {
+                "model": "GPT-4.1",
+                "lab": "OpenAI",
+                "date": 2025.25,
+                "mmlu": 90.2,
+                "parameters": 300.0
+        },
+        {
+                "model": "GPT-4.5",
+                "lab": "OpenAI",
+                "date": 2025.0833333333333,
+                "mmlu": 89.6,
+                "parameters": 3000.0
+        },
+        {
+                "model": "Hunyuan Turbo S",
+                "lab": "Tencent",
+                "date": 2025.0833333333333,
+                "mmlu": 89.5,
+                "parameters": 389.0
+        },
+        {
+                "model": "Llama-3.1-Tulu-3-405B",
+                "lab": "Allen AI",
+                "date": 2025.0,
+                "mmlu": 87.0,
+                "parameters": 405.0
+        },
+        {
+                "model": "Qwen2.5-Max",
+                "lab": "Alibaba",
+                "date": 2025.0,
+                "mmlu": 87.9,
+                "parameters": 325.0
+        },
+        {
+                "model": "DeepSeek-R1",
+                "lab": "DeepSeek-AI",
+                "date": 2025.0,
+                "mmlu": 90.8,
+                "parameters": 685.0
+        },
+        {
+                "model": "DeepSeek-V3",
+                "lab": "DeepSeek-AI",
+                "date": 2024.9166666666667,
+                "mmlu": 87.1,
+                "parameters": 685.0
+        },
+        {
+                "model": "o1-2024-12-17",
+                "lab": "OpenAI",
+                "date": 2024.9166666666667,
+                "mmlu": 91.8,
+                "parameters": 200.0
+        },
+        {
+                "model": "o1",
+                "lab": "OpenAI",
+                "date": 2024.9166666666667,
+                "mmlu": 92.3,
+                "parameters": 200.0
+        },
+        {
+                "model": "gpt-4o-2024-11-20",
+                "lab": "OpenAI",
+                "date": 2024.8333333333333,
+                "mmlu": 85.7,
+                "parameters": 200.0
+        },
+        {
+                "model": "Hunyuan-Large",
+                "lab": "Tencent",
+                "date": 2024.8333333333333,
+                "mmlu": 89.9,
+                "parameters": 389.0
+        },
+        {
+                "model": "Claude 3.5 Sonnet (new)",
+                "lab": "Anthropic",
+                "date": 2024.75,
+                "mmlu": 90.5,
+                "parameters": 175.0
+        },
+        {
+                "model": "o1-preview",
+                "lab": "OpenAI",
+                "date": 2024.6666666666667,
+                "mmlu": 92.3,
+                "parameters": 200.0
+        },
+        {
+                "model": "Grok-2",
+                "lab": "xAI",
+                "date": 2024.5833333333333,
+                "mmlu": 87.5,
+                "parameters": 400.0
+        },
+        {
+                "model": "Mistral Large 2",
+                "lab": "Mistral",
+                "date": 2024.5,
+                "mmlu": 84.0,
+                "parameters": 123.0
+        },
+        {
+                "model": "Llama 3.1 405B",
+                "lab": "Meta AI",
+                "date": 2024.5,
+                "mmlu": 88.6,
+                "parameters": 405.0
+        },
+        {
+                "model": "DeepSeek-Coder-V2",
+                "lab": "DeepSeek-AI",
+                "date": 2024.4166666666667,
+                "mmlu": 79.2,
+                "parameters": 236.0
+        },
+        {
+                "model": "Nemotron-4-340B",
+                "lab": "NVIDIA",
+                "date": 2024.4166666666667,
+                "mmlu": 81.1,
+                "parameters": 340.0
+        },
+        {
+                "model": "GPT-4o",
+                "lab": "OpenAI",
+                "date": 2024.3333333333333,
+                "mmlu": 88.7,
+                "parameters": 200.0
+        },
+        {
+                "model": "DeepSeek-V2",
+                "lab": "DeepSeek-AI",
+                "date": 2024.3333333333333,
+                "mmlu": 78.5,
+                "parameters": 236.0
+        },
+        {
+                "model": "Qwen-1.5 110B",
+                "lab": "Alibaba",
+                "date": 2024.25,
+                "mmlu": 80.4,
+                "parameters": 111.0
+        },
+        {
+                "model": "mixtral-8x22b",
+                "lab": "Mistral",
+                "date": 2024.25,
+                "mmlu": 77.75,
+                "parameters": 141.0
+        },
+        {
+                "model": "Grok-1.5",
+                "lab": "xAI",
+                "date": 2024.1666666666667,
+                "mmlu": 81.3,
+                "parameters": 180.0
+        },
+        {
+                "model": "Claude 3 Opus",
+                "lab": "Anthropic",
+                "date": 2024.1666666666667,
+                "mmlu": 86.8,
+                "parameters": 2500.0
+        },
+        {
+                "model": "Mistral Large",
+                "lab": "Mistral",
+                "date": 2024.0833333333333,
+                "mmlu": 81.2,
+                "parameters": 300.0
+        },
+        {
+                "model": "Gemini 1.5 Pro",
+                "lab": "Google DeepMind",
+                "date": 2024.0833333333333,
+                "mmlu": 85.9,
+                "parameters": 200.0
+        },
+        {
+                "model": "Mistral-medium",
+                "lab": "Mistral",
+                "date": 2023.9166666666667,
+                "mmlu": 75.3,
+                "parameters": 180.0
+        },
+        {
+                "model": "Gemini Ultra 1.0",
+                "lab": "Google DeepMind",
+                "date": 2023.9166666666667,
+                "mmlu": 83.7,
+                "parameters": 1500.0
+        },
+        {
+                "model": "Claude 2.1",
+                "lab": "Anthropic",
+                "date": 2023.8333333333333,
+                "mmlu": 78.5,
+                "parameters": 130.0
+        },
+        {
+                "model": "Claude 2",
+                "lab": "Anthropic",
+                "date": 2023.5,
+                "mmlu": 78.5,
+                "parameters": 130.0
+        },
+        {
+                "model": "GPT-4 Classic (gpt-4-0314 & gpt-4-0613, non-Turbo)",
+                "lab": "OpenAI",
+                "date": 2023.1666666666667,
+                "mmlu": 86.4,
+                "parameters": 1760.0
+        },
+        {
+                "model": "Galactica",
+                "lab": "Meta AI",
+                "date": 2022.8333333333333,
+                "mmlu": 52.6,
+                "parameters": 120.0
+        },
+        {
+                "model": "Flan-PaLM",
+                "lab": "Google",
+                "date": 2022.75,
+                "mmlu": 73.5,
+                "parameters": 540.0
+        },
+        {
+                "model": "U-PaLM",
+                "lab": "Google",
+                "date": 2022.75,
+                "mmlu": 74.1,
+                "parameters": 540.0
+        },
+        {
+                "model": "A.X K1",
+                "lab": "SKT",
+                "date": 2025.9166666666667,
+                "mmlu": 85.0,
+                "parameters": 519.0
+        }
+];
+
+        const margin = {top: 40, right: 120, bottom: 80, left: 80};
+        const width = Math.min(1400, window.innerWidth - 100) - margin.left - margin.right;
+        const height = Math.min(800, window.innerHeight - 300) - margin.top - margin.bottom;
+
+        const svg = d3.select('#chart')
+            .append('svg')
+            .attr('width', width + margin.left + margin.right)
+            .attr('height', height + margin.top + margin.bottom)
+            .append('g')
+            .attr('transform', `translate(${margin.left},${margin.top})`);
+
+        const xScale = d3.scaleLinear()
+            .domain([2022, 2026.5])
+            .range([0, width]);
+
+        const yScale = d3.scaleLinear()
+            .domain([50, 100])
+            .range([height, 0]);
+
+        // Linear scale for large models - clearer size differences
+        const sizeScale = d3.scaleSqrt()
+            .domain([100, d3.max(vizData, d => d.parameters)])
+            .range([10, 50]);
+
+        const xGrid = d3.axisBottom(xScale)
+            .tickSize(-height)
+            .tickFormat('')
+            .tickValues([2022, 2023, 2024, 2025, 2026]);
+
+        const yGrid = d3.axisLeft(yScale)
+            .tickSize(-width)
+            .tickFormat('')
+            .ticks(10);
+
+        svg.append('g')
+            .attr('class', 'grid')
+            .attr('transform', `translate(0,${height})`)
+            .call(xGrid);
+
+        svg.append('g')
+            .attr('class', 'grid')
+            .call(yGrid);
+
+        svg.append('line')
+            .attr('class', 'reference-line')
+            .attr('x1', 0)
+            .attr('x2', width)
+            .attr('y1', yScale(89.8))
+            .attr('y2', yScale(89.8));
+
+        svg.append('text')
+            .attr('class', 'reference-label')
+            .attr('x', width - 10)
+            .attr('y', yScale(89.8) - 8)
+            .attr('text-anchor', 'end')
+            .text('89.8 = 인간 전문가');
+
+        const xAxis = d3.axisBottom(xScale)
+            .tickFormat(d => d.toString())
+            .tickValues([2022, 2023, 2024, 2025, 2026]);
+
+        const yAxis = d3.axisLeft(yScale)
+            .ticks(10);
+
+        svg.append('g')
+            .attr('class', 'axis')
+            .attr('transform', `translate(0,${height})`)
+            .call(xAxis);
+
+        svg.append('g')
+            .attr('class', 'axis')
+            .call(yAxis);
+
+        svg.append('text')
+            .attr('class', 'axis-label')
+            .attr('text-anchor', 'middle')
+            .attr('x', width / 2)
+            .attr('y', height + 50)
+            .text('출시 시기');
+
+        svg.append('text')
+            .attr('class', 'axis-label')
+            .attr('text-anchor', 'middle')
+            .attr('transform', 'rotate(-90)')
+            .attr('x', -height / 2)
+            .attr('y', -50)
+            .text('MMLU 점수');
+
+        const tooltip = d3.select('#tooltip');
+
+        const sortedData = [...vizData].sort((a, b) => b.parameters - a.parameters);
+
+        const bubbles = svg.selectAll('.bubble')
+            .data(sortedData)
+            .enter()
+            .append('circle')
+            .attr('class', 'bubble')
+            .attr('cx', d => xScale(d.date))
+            .attr('cy', d => yScale(d.mmlu))
+            .attr('r', d => sizeScale(d.parameters))
+            .attr('fill', d => labColors[d.lab] || '#999')
+            .attr('opacity', 0.75)
+            .on('mouseover', function(event, d) {
+                d3.select(this)
+                    .transition()
+                    .duration(200)
+                    .attr('opacity', 1)
+                    .attr('stroke-width', 3);
+                
+                tooltip
+                    .style('opacity', 1)
+                    .html(`
+                        <strong>${d.model}</strong>
+                        <div class="tooltip-lab">${d.lab}</div>
+                        <div>MMLU: ${d.mmlu.toFixed(1)}</div>
+                        <div>파라미터: ${d.parameters >= 1000 ? (d.parameters/1000).toFixed(1) + 'T' : d.parameters.toFixed(0) + 'B'}</div>
+                        <div>출시: ${formatDate(d.date)}</div>
+                    `)
+                    .style('left', (event.pageX + 15) + 'px')
+                    .style('top', (event.pageY - 15) + 'px');
+            })
+            .on('mouseout', function(event, d) {
+                d3.select(this)
+                    .transition()
+                    .duration(200)
+                    .attr('opacity', 0.75)
+                    .attr('stroke-width', 2);
+                
+                tooltip.style('opacity', 0);
+            });
+
+        // Label all major models
+        svg.selectAll('.model-label')
+            .data(vizData)
+            .enter()
+            .append('text')
+            .attr('class', 'model-label')
+            .attr('x', d => xScale(d.date))
+            .attr('y', d => yScale(d.mmlu) - sizeScale(d.parameters) - 4)
+            .attr('text-anchor', 'middle')
+            .text(d => {
+                let label = d.model;
+                if (label.length > 20) label = label.substring(0, 17) + '...';
+                return label;
+            });
+
+        const uniqueLabs = [...new Set(vizData.map(d => d.lab))].sort();
+        const legend = d3.select('#legend');
+
+        uniqueLabs.forEach(lab => {
+            const item = legend.append('div').attr('class', 'legend-item');
+            item.append('div')
+                .attr('class', 'legend-color')
+                .style('background-color', labColors[lab] || '#999');
+            item.append('span').text(lab);
+        });
+
+        bubbles
+            .attr('r', 0)
+            .transition()
+            .duration(800)
+            .delay((d, i) => i * 20)
+            .attr('r', d => sizeScale(d.parameters));
+    </script>
+</body>
+</html>
